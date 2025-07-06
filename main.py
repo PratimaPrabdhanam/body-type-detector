@@ -1,39 +1,24 @@
-import cv2
-import numpy as np
-import mediapipe as mp
-from utils.model_utils import load_trained_model, predict_body_shape
-from utils.data_loader import process_live_keypoints
+from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from detector import detect_from_bytes
+from suggestions import get_suggestions
 
-# Load model
-model, body_shapes = load_trained_model("body_detection_model.h5")
+app = FastAPI()
 
-# Initialize MediaPipe Pose
-mp_pose = mp.solutions.pose
-pose = mp_pose.Pose()
+# Enable frontend access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Start webcam
-cap = cv2.VideoCapture(0)
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
-
-    # Convert frame to RGB
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = pose.process(rgb_frame)
-
-    if results.pose_landmarks:
-        keypoints = process_live_keypoints(results.pose_landmarks)
-        body_shape = predict_body_shape(model, keypoints, body_shapes)
-        print(f"Predicted Body Shape: {body_shape}")  # Debugging line
-
-        # Display body shape on frame
-        cv2.putText(frame, f"Body Shape: {body_shape}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-    # Show frame
-    cv2.imshow("Live Body Detection", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
+@app.post("/analyze/")
+async def analyze(file: UploadFile = File(...)):
+    image_bytes = await file.read()
+    body_type = detect_from_bytes(image_bytes)
+    suggestions = get_suggestions(body_type)
+    return {
+        "body_type": body_type,
+        "suggestions": suggestions
+    }
